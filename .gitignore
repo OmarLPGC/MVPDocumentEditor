@@ -8,3 +8,7 @@ __pycache__/
 .mypy_cache/
 .pyre/
 .DS_Store
+.vscode/
+.idea/
+.agents/
+.tests/conftest.py
