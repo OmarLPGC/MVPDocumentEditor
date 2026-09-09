@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QAction, QFont, QTextCharFormat, QTextCursor
+from PySide6.QtGui import (
+    QAction,
+    QFont,
+    QFontDatabase,
+    QTextCharFormat,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
     QFileDialog,
     QMainWindow,
     QTextEdit,
+    QSpinBox,
     QToolBar,
     QWidget,
 )
@@ -188,6 +197,47 @@ class MainWindow(QMainWindow):
         self.underline_action = self._format_action(
             toolbar, "Subrayado", "underlineFormatAction", self.toggle_underline
         )
+        self.font_combo = QComboBox(toolbar)
+        self.font_combo.setObjectName("fontFamilyCombo")
+        self.font_combo.setEditable(True)
+        self.font_combo.addItems(self._font_families())
+        self.font_combo.currentTextChanged.connect(self.set_font_family)
+        toolbar.addWidget(self.font_combo)
+
+        self.font_size_spin = QSpinBox(toolbar)
+        self.font_size_spin.setObjectName("fontSizeSpinBox")
+        self.font_size_spin.setRange(6, 1000)
+        self.font_size_spin.setValue(12)
+        self.font_size_spin.valueChanged.connect(self.set_font_size)
+        toolbar.addWidget(self.font_size_spin)
+
+    @staticmethod
+    def _font_families() -> list[str]:
+        families = QFontDatabase.families()
+        fallback = QApplication.font().family()
+        if fallback not in families:
+            families.insert(0, fallback)
+        return sorted(set(families), key=str.casefold)
+
+    def _apply_font_format(self, update) -> None:
+        current = self.editor.textCursor().charFormat()
+        updated = QTextCharFormat()
+        updated.setFont(current.font())
+        update(updated)
+        self.editor.apply_format(updated)
+
+    def set_font_family(self, requested: str) -> None:
+        fallback = QApplication.font().family() or "Sans Serif"
+        available = {family.casefold(): family for family in QFontDatabase.families()}
+        family = available.get(requested.strip().casefold(), fallback)
+        self._apply_font_format(lambda format_: format_.setFontFamily(family))
+        if self.font_combo.currentText() != family:
+            self.font_combo.blockSignals(True)
+            self.font_combo.setCurrentText(family)
+            self.font_combo.blockSignals(False)
+
+    def set_font_size(self, size: int) -> None:
+        self._apply_font_format(lambda format_: format_.setFontPointSize(float(size)))
 
     @staticmethod
     def _format_action(

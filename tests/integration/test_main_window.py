@@ -235,3 +235,50 @@ def test_all_basic_format_actions_are_exposed(qtbot) -> None:
         "italicFormatAction",
         "underlineFormatAction",
     }.issubset(action_names)
+
+
+def test_font_family_and_size_apply_to_selected_text(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setPlainText("Texto")
+    cursor = window.editor.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(5, cursor.MoveMode.KeepAnchor)
+    window.editor.setTextCursor(cursor)
+
+    window.set_font_family("Arial")
+    window.set_font_size(18)
+
+    style = window.document_model.paragraphs[0].runs[0].style
+    assert style.font_family
+    assert style.font_size == 18
+
+
+def test_unavailable_font_uses_safe_fallback(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setPlainText("Texto")
+    cursor = window.editor.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(5, cursor.MoveMode.KeepAnchor)
+    window.editor.setTextCursor(cursor)
+
+    window.set_font_family("FontThatDoesNotExist_987654")
+
+    style = window.document_model.paragraphs[0].runs[0].style
+    assert style.font_family == window.font_combo.currentText()
+    assert style.font_family != "FontThatDoesNotExist_987654"
+
+
+def test_font_controls_apply_to_text_typed_after_cursor_formatting(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setFocus()
+
+    window.set_font_family("Arial")
+    window.set_font_size(16)
+    window.editor.insertPlainText("Texto nuevo")
+
+    style = window.document_model.paragraphs[0].runs[0].style
+    assert style.font_family == window.font_combo.currentText()
+    assert style.font_size == 16
