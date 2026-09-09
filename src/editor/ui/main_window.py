@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import (
     QAction,
+    QTextBlockFormat,
     QFont,
     QFontDatabase,
     QTextCharFormat,
@@ -84,12 +85,13 @@ class EditorCanvas(QTextEdit):
 
     @staticmethod
     def _alignment_name(alignment: int) -> str:
+        horizontal_alignment = int(alignment) & 0x0F
         return {
             1: "left",
-            2: "center",
-            4: "right",
+            2: "right",
+            4: "center",
             8: "justify",
-        }.get(int(alignment), "left")
+        }.get(horizontal_alignment, "left")
 
     @staticmethod
     def _style_from_format(char_format: QTextCharFormat) -> TextStyle:
@@ -211,6 +213,24 @@ class MainWindow(QMainWindow):
         self.font_size_spin.valueChanged.connect(self.set_font_size)
         toolbar.addWidget(self.font_size_spin)
 
+        self.alignment_actions = {}
+        for label, alignment, qt_alignment in (
+            ("Izquierda", "left", Qt.AlignmentFlag.AlignLeft),
+            ("Centrada", "center", Qt.AlignmentFlag.AlignHCenter),
+            ("Derecha", "right", Qt.AlignmentFlag.AlignRight),
+            ("Justificada", "justify", Qt.AlignmentFlag.AlignJustify),
+        ):
+            action = QAction(label, toolbar)
+            action.setObjectName(f"{alignment}AlignmentAction")
+            action.setCheckable(True)
+            action.triggered.connect(
+                lambda checked, value=alignment, qt_value=qt_alignment: self.set_alignment(
+                    value, qt_value
+                )
+            )
+            toolbar.addAction(action)
+            self.alignment_actions[alignment] = action
+
     @staticmethod
     def _font_families() -> list[str]:
         families = QFontDatabase.families()
@@ -238,6 +258,32 @@ class MainWindow(QMainWindow):
 
     def set_font_size(self, size: int) -> None:
         self._apply_font_format(lambda format_: format_.setFontPointSize(float(size)))
+
+    def set_alignment(self, alignment: str, qt_alignment: Qt.AlignmentFlag) -> None:
+        if alignment not in {"left", "center", "right", "justify"}:
+            raise ValueError(f"Unsupported alignment: {alignment}")
+        cursor = self.editor.textCursor()
+        block_format = QTextBlockFormat()
+        block_format.setAlignment(qt_alignment)
+        cursor.mergeBlockFormat(block_format)
+        self.editor.setTextCursor(cursor)
+        self.editor.setFocus()
+        self._sync_alignment_model()
+        self._update_alignment_actions(alignment)
+
+    def _sync_alignment_model(self) -> None:
+        block = self.editor.document().firstBlock()
+        index = 0
+        while block.isValid() and index < len(self.document_model.paragraphs):
+            self.document_model.set_alignment(
+                index, self.editor._alignment_name(block.blockFormat().alignment())
+            )
+            block = block.next()
+            index += 1
+
+    def _update_alignment_actions(self, active: str) -> None:
+        for alignment, action in self.alignment_actions.items():
+            action.setChecked(alignment == active)
 
     @staticmethod
     def _format_action(

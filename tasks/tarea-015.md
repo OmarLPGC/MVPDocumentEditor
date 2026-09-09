@@ -24,3 +24,7 @@ Añadir soporte para la alineación izquierda, centrada, derecha y justificada, 
 - Alinear un párrafo a la derecha y comprobar la vista.
 - Aplicar alineación centrada y confirmar no afecta a otros bloques.
 - Guardar y reabrir para verificar la persistencia.
+
+## Estado
+Completada: se implementaron las acciones de alineación, la sincronización con
+el modelo, la persistencia HTML y las pruebas de integración correspondientes.

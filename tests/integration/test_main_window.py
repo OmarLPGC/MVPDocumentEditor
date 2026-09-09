@@ -1,5 +1,5 @@
 import pytest
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QTextCursor
 
 from editor.model import Document, TextStyle
 from editor.ui import MainWindow
@@ -282,3 +282,59 @@ def test_font_controls_apply_to_text_typed_after_cursor_formatting(qtbot) -> Non
     style = window.document_model.paragraphs[0].runs[0].style
     assert style.font_family == window.font_combo.currentText()
     assert style.font_size == 16
+
+
+def test_alignment_actions_apply_to_active_paragraph_only(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setPlainText("Primero\nSegundo")
+    cursor = window.editor.textCursor()
+    cursor.setPosition(len("Primero") + 1)
+    window.editor.setTextCursor(cursor)
+
+    window.alignment_actions["right"].trigger()
+
+    assert window.document_model.paragraphs[0].alignment == "left"
+    assert window.document_model.paragraphs[1].alignment == "right"
+    assert window.editor.document().findBlockByNumber(1).blockFormat().alignment() == 2
+
+
+def test_alignment_selection_affects_only_selected_paragraphs(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setPlainText("Uno\nDos\nTres")
+    cursor = window.editor.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(len("Uno\nDos"), QTextCursor.MoveMode.KeepAnchor)
+    window.editor.setTextCursor(cursor)
+
+    window.alignment_actions["justify"].trigger()
+
+    assert [paragraph.alignment for paragraph in window.document_model.paragraphs] == [
+        "justify",
+        "justify",
+        "left",
+    ]
+
+
+def test_all_alignment_actions_are_available_and_persist_after_reopen(
+    qtbot, tmp_path
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setPlainText("Texto")
+    window.alignment_actions["center"].trigger()
+    path = tmp_path / "aligned.html"
+
+    window.save_document(str(path))
+    window.new_document()
+    window.open_document(str(path))
+
+    assert window.document_model.paragraphs[0].alignment == "center"
+    assert (
+        window.editor._alignment_name(
+            window.editor.document().firstBlock().blockFormat().alignment()
+        )
+        == "center"
+    )
+    assert set(window.alignment_actions) == {"left", "center", "right", "justify"}
