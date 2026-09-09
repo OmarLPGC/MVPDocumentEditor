@@ -20,6 +20,15 @@ Pasos rápidos (Windows PowerShell):
 3. Ejecutar tests
    pytest
 
+4. Ejecutar la aplicación
+   python -m editor
+
+En entornos sin servidor gráfico, como CI, ejecutar los tests GUI en modo
+offscreen:
+
+   $env:QT_QPA_PLATFORM = "offscreen"
+   pytest
+
 Formato de código
 - Formatear con black:
   black src tests

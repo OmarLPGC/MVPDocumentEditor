@@ -1,6 +1,6 @@
 import pytest
 
-from editor.model import Document, Selection, TextStyle
+from editor.model import Document, DocumentMetadata, Selection, TextStyle
 
 
 def test_document_creation() -> None:
@@ -116,3 +116,77 @@ def test_invalid_selection_and_format_values_are_rejected() -> None:
         document.set_alignment(0, "diagonal")
     with pytest.raises(ValueError):
         document.set_font_size(Selection(0, 0, 5), 0)
+
+
+def test_insert_text_between_styled_runs_keeps_run_order_and_styles() -> None:
+    document = Document()
+    document.insert_text("Hola", style=TextStyle(bold=True))
+    document.insert_text(" mundo", style=TextStyle(italic=True))
+
+    document.insert_text("!", position=4, style=TextStyle(underline=True))
+
+    runs = document.paragraphs[0].runs
+    assert [(run.text, run.style) for run in runs] == [
+        ("Hola", TextStyle(bold=True)),
+        ("!", TextStyle(underline=True)),
+        (" mundo", TextStyle(italic=True)),
+    ]
+
+
+def test_apply_style_to_subrange_preserves_prefix_and_suffix() -> None:
+    document = Document()
+    document.insert_text("abcdef")
+
+    document.apply_style(0, 2, 4, TextStyle(italic=True))
+
+    assert [(run.text, run.style.italic) for run in document.paragraphs[0].runs] == [
+        ("ab", False),
+        ("cd", True),
+        ("ef", False),
+    ]
+
+
+@pytest.mark.parametrize("alignment", ["left", "center", "right", "justify"])
+def test_all_supported_alignments_are_accepted(alignment: str) -> None:
+    document = Document()
+
+    document.set_alignment(0, alignment)
+
+    assert document.paragraphs[0].alignment == alignment
+
+
+def test_metadata_is_retained_in_model_serialization() -> None:
+    document = Document(
+        metadata=DocumentMetadata(language="en", author="Test Author")
+    )
+
+    serialized = document.to_dict()
+
+    assert serialized["metadata"] == {"language": "en", "author": "Test Author"}
+
+
+@pytest.mark.parametrize(
+    ("operation", "expected_exception"),
+    [
+        (lambda document: document.insert_text("x", paragraph_index=1), IndexError),
+        (lambda document: document.insert_text("x", position=-1), ValueError),
+        (lambda document: document.select_range(0, -1, 1), ValueError),
+        (lambda document: document.set_font(Selection(0, 0, 0), "   "), ValueError),
+    ],
+)
+def test_invalid_edit_operations_are_rejected(operation, expected_exception) -> None:
+    with pytest.raises(expected_exception):
+        operation(Document())
+
+
+def test_style_update_merges_adjacent_runs_with_same_resulting_style() -> None:
+    document = Document()
+    document.insert_text("ab", style=TextStyle(bold=True))
+    document.insert_text("cd", style=TextStyle(bold=False))
+
+    document.apply_selection_style(
+        document.select_range(0, 2, 4), TextStyle(bold=True)
+    )
+
+    assert len(document.paragraphs[0].runs) == 1
+    assert document.paragraphs[0].runs[0].text == "abcd"
