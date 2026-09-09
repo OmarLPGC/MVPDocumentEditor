@@ -194,3 +194,44 @@ def test_user_open_invalid_html_reports_error_without_replacing_document(
 
     assert window.editor.toPlainText() == "Contenido vigente"
     assert window.windowTitle() == "Actual"
+
+
+def test_format_actions_apply_visible_bold_to_selection(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setPlainText("Texto normal")
+    cursor = window.editor.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(5, cursor.MoveMode.KeepAnchor)
+    window.editor.setTextCursor(cursor)
+
+    window.bold_action.trigger()
+
+    assert window.editor.textCursor().hasSelection()
+    assert window.editor.textCursor().charFormat().fontWeight() == 700
+    assert window.document_model.paragraphs[0].runs[0].style.bold is True
+
+
+def test_format_toggle_is_inherited_by_following_text(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setFocus()
+
+    window.bold_action.trigger()
+    window.editor.insertPlainText("Texto nuevo")
+
+    assert window.editor.toPlainText() == "Texto nuevo"
+    assert window.document_model.paragraphs[0].runs[0].style.bold is True
+
+
+def test_all_basic_format_actions_are_exposed(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    action_names = {action.objectName() for action in window.findChildren(QAction)}
+
+    assert {
+        "boldFormatAction",
+        "italicFormatAction",
+        "underlineFormatAction",
+    }.issubset(action_names)

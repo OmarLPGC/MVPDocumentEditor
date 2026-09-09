@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QAction, QFont
+from PySide6.QtGui import QAction, QFont, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
-    QPlainTextEdit,
+    QTextEdit,
     QToolBar,
     QWidget,
 )
 
 from editor.io import DocumentIOError, load_document, save_document
-from editor.model import Document
+from editor.model import Document, TextStyle
+from editor.serialization import serialize_document
 
 
-class EditorCanvas(QPlainTextEdit):
+class EditorCanvas(QTextEdit):
     """Text canvas that keeps a framework-independent Document in sync."""
 
     cursor_state_changed = Signal(tuple)
@@ -33,11 +34,18 @@ class EditorCanvas(QPlainTextEdit):
         self.selectionChanged.connect(self._notify_cursor_state)
 
     def load_model(self) -> None:
-        """Render the model's plain text without creating a feedback loop."""
+        """Render model text and styles without creating a feedback loop."""
 
         self._syncing_from_model = True
         try:
-            self.setPlainText(self.document_model.content)
+            self.setHtml(serialize_document(self.document_model))
+            if self.toPlainText().endswith(" ") and not self.document_model.content.endswith(
+                " "
+            ):
+                cursor = self.textCursor()
+                cursor.movePosition(QTextCursor.MoveOperation.End)
+                cursor.deletePreviousChar()
+                self.setTextCursor(cursor)
         finally:
             self._syncing_from_model = False
 
@@ -45,11 +53,51 @@ class EditorCanvas(QPlainTextEdit):
         if self._syncing_from_model:
             return
         self.document_model.clear()
-        for index, paragraph in enumerate(self.toPlainText().split("\n")):
+        block = self.document().firstBlock()
+        index = 0
+        while block.isValid():
             if index == 0:
-                self.document_model.insert_text(paragraph)
+                paragraph = self.document_model.paragraphs[0]
             else:
-                self.document_model.add_paragraph(paragraph)
+                self.document_model.add_paragraph()
+                paragraph = self.document_model.paragraphs[-1]
+            paragraph.alignment = self._alignment_name(block.blockFormat().alignment())
+            iterator = block.begin()
+            while not iterator.atEnd():
+                fragment = iterator.fragment()
+                if fragment.isValid() and fragment.text():
+                    paragraph.append_text(
+                        fragment.text(), self._style_from_format(fragment.charFormat())
+                    )
+                iterator += 1
+            block = block.next()
+            index += 1
+
+    @staticmethod
+    def _alignment_name(alignment: int) -> str:
+        return {
+            1: "left",
+            2: "center",
+            4: "right",
+            8: "justify",
+        }.get(int(alignment), "left")
+
+    @staticmethod
+    def _style_from_format(char_format: QTextCharFormat) -> TextStyle:
+        font = char_format.font()
+        return TextStyle(
+            bold=font.bold(),
+            italic=font.italic(),
+            underline=font.underline(),
+            font_family=font.family() or None,
+            font_size=font.pointSizeF() if font.pointSizeF() > 0 else None,
+        )
+
+    def apply_format(self, char_format: QTextCharFormat) -> None:
+        cursor = self.textCursor()
+        cursor.mergeCharFormat(char_format)
+        self.setTextCursor(cursor)
+        self.setFocus()
 
     def cursor_state(self) -> tuple[int, int, int]:
         """Return zero-based line, column, and selected character count."""
@@ -130,6 +178,62 @@ class MainWindow(QMainWindow):
         save_action.setObjectName("saveDocumentAction")
         save_action.triggered.connect(self.save_from_dialog)
         toolbar.addAction(save_action)
+
+        self.bold_action = self._format_action(
+            toolbar, "Negrita", "boldFormatAction", self.toggle_bold
+        )
+        self.italic_action = self._format_action(
+            toolbar, "Cursiva", "italicFormatAction", self.toggle_italic
+        )
+        self.underline_action = self._format_action(
+            toolbar, "Subrayado", "underlineFormatAction", self.toggle_underline
+        )
+
+    @staticmethod
+    def _format_action(
+        toolbar: QToolBar, label: str, object_name: str, callback
+    ) -> QAction:
+        action = QAction(label, toolbar)
+        action.setObjectName(object_name)
+        action.setCheckable(True)
+        action.triggered.connect(callback)
+        toolbar.addAction(action)
+        return action
+
+    def _toggle_format(self, attribute: str, checked: bool) -> None:
+        cursor = self.editor.textCursor()
+        if not cursor.hasSelection():
+            current = cursor.charFormat()
+            updated = QTextCharFormat()
+            updated.setFont(current.font())
+            if attribute == "bold":
+                updated.setFontWeight(QFont.Weight.Bold if checked else QFont.Weight.Normal)
+            elif attribute == "italic":
+                updated.setFontItalic(checked)
+            else:
+                updated.setFontUnderline(checked)
+            self.editor.apply_format(updated)
+            return
+
+        current = cursor.charFormat()
+        updated = QTextCharFormat()
+        updated.setFont(current.font())
+        if attribute == "bold":
+            updated.setFontWeight(QFont.Weight.Bold if checked else QFont.Weight.Normal)
+        elif attribute == "italic":
+            updated.setFontItalic(checked)
+        else:
+            updated.setFontUnderline(checked)
+        self.editor.apply_format(updated)
+
+    def toggle_bold(self, checked: bool) -> None:
+        self._toggle_format("bold", checked)
+
+    def toggle_italic(self, checked: bool) -> None:
+        self._toggle_format("italic", checked)
+
+    def toggle_underline(self, checked: bool) -> None:
+        self._toggle_format("underline", checked)
 
     def new_document(self) -> None:
         self.document_model = Document()
