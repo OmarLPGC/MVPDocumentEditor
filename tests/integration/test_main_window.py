@@ -1,3 +1,5 @@
+import pytest
+
 from editor.model import Document
 from editor.ui import MainWindow
 
@@ -84,3 +86,31 @@ def test_cursor_status_reports_position_and_selection(qtbot) -> None:
     assert window.editor.cursor_state() == (1, 5, 5)
     assert "Línea 2, columna 6" in window.statusBar().currentMessage()
     assert "5 seleccionados" in window.statusBar().currentMessage()
+
+
+def test_window_save_and_open_round_trip(qtbot, tmp_path) -> None:
+    window = MainWindow(Document("Original"))
+    qtbot.addWidget(window)
+    window.editor.setPlainText("Contenido guardado")
+    path = tmp_path / "document.html"
+
+    window.save_document(str(path))
+    window.open_document(str(path))
+
+    assert window.current_path == str(path)
+    assert window.windowTitle() == "Original"
+    assert window.editor.toPlainText() == "Contenido guardado"
+
+
+def test_open_invalid_document_keeps_current_content(qtbot, tmp_path) -> None:
+    window = MainWindow(Document("Actual"))
+    qtbot.addWidget(window)
+    window.editor.setPlainText("Contenido actual")
+    path = tmp_path / "unsafe.html"
+    path.write_text("<script>alert(1)</script>", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        window.open_document(str(path))
+
+    assert window.editor.toPlainText() == "Contenido actual"
+    assert window.document_model.content == "Contenido actual"

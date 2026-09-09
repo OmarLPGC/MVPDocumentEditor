@@ -5,12 +5,14 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
+    QFileDialog,
     QMainWindow,
     QPlainTextEdit,
     QToolBar,
     QWidget,
 )
 
+from editor.io import DocumentIOError, load_document, save_document
 from editor.model import Document
 
 
@@ -81,6 +83,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__(parent)
         self.document_model = document or Document()
+        self.current_path: str | None = None
         self.setObjectName("mainWindow")
         self.setWindowTitle(self.document_model.title)
         self.resize(960, 700)
@@ -118,6 +121,16 @@ class MainWindow(QMainWindow):
         clear_action.triggered.connect(self.clear_document)
         toolbar.addAction(clear_action)
 
+        open_action = QAction("Abrir", self)
+        open_action.setObjectName("openDocumentAction")
+        open_action.triggered.connect(self.open_from_dialog)
+        toolbar.addAction(open_action)
+
+        save_action = QAction("Guardar", self)
+        save_action.setObjectName("saveDocumentAction")
+        save_action.triggered.connect(self.save_from_dialog)
+        toolbar.addAction(save_action)
+
     def new_document(self) -> None:
         self.document_model = Document()
         self.setWindowTitle(self.document_model.title)
@@ -128,6 +141,40 @@ class MainWindow(QMainWindow):
     def clear_document(self) -> None:
         self.editor.clear()
         self.editor.setFocus()
+
+    def save_document(self, path: str) -> None:
+        """Save the current model and update the active path."""
+
+        save_document(self.document_model, path)
+        self.current_path = path
+
+    def open_document(self, path: str) -> None:
+        """Open a validated document, preserving current state on failure."""
+
+        loaded = load_document(path)
+        self.document_model = loaded
+        self.current_path = path
+        self.setWindowTitle(loaded.title)
+        self.editor.document_model = loaded
+        self.editor.load_model()
+        self.editor.setFocus()
+
+    def save_from_dialog(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Guardar documento", "", "HTML (*.html *.htm)"
+        )
+        if path:
+            self.save_document(path)
+
+    def open_from_dialog(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Abrir documento", "", "HTML (*.html *.htm)"
+        )
+        if path:
+            try:
+                self.open_document(path)
+            except DocumentIOError as exc:
+                self.statusBar().showMessage(str(exc), 5000)
 
 
 def create_main_window(document: Document | None = None) -> MainWindow:
